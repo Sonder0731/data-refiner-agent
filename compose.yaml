@@ -1,0 +1,254 @@
+name: data-refiner-agent
+
+x-master-environment: &master-environment
+  SPARK_MASTER_HOST: 172.28.1.2
+  SPARK_LOCAL_IP: 172.28.1.2
+  SPARK_LOCAL_HOSTNAME: master
+  DATABASE_URL: postgresql://data_refiner:${DATA_REFINER_DB_PASSWORD}@data-refiner-postgres:5432/data_refiner
+  EMBEDDING_API_URL: http://embedding-api:18000
+  LITELLM_API_KEY: ${LITELLM_API_KEY:-}
+
+services:
+  metastore:
+    image: postgres:11
+    hostname: metastore
+    environment:
+      POSTGRES_DB: metastore
+      POSTGRES_USER: jupyter
+      POSTGRES_PASSWORD: jupyter
+    volumes:
+      - metastore:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jupyter -d metastore"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks:
+      sparknet:
+        ipv4_address: 172.28.1.1
+
+  data-refiner-postgres:
+    image: pgvector/pgvector:0.8.6-pg16
+    hostname: data-refiner-postgres
+    environment:
+      POSTGRES_DB: data_refiner
+      POSTGRES_USER: data_refiner
+      POSTGRES_PASSWORD: ${DATA_REFINER_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:${DATA_REFINER_DB_PORT:-5433}:5432"
+    volumes:
+      - data-refiner-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U data_refiner -d data_refiner"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks:
+      - sparknet
+
+  embedding-api:
+    build: services/embedding
+    image: data-refiner-embedding:0.0.1
+    ports:
+      - "127.0.0.1:${EMBEDDING_API_PORT:-18000}:18000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 18000), 2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - sparknet
+
+  master:
+    build:
+      context: .
+      dockerfile: deploy/master/Dockerfile
+    image: data-refiner-hadoop-master:0.0.1
+    hostname: master
+    depends_on:
+      metastore:
+        condition: service_healthy
+      data-refiner-postgres:
+        condition: service_healthy
+      embedding-api:
+        condition: service_healthy
+    environment: *master-environment
+    ports:
+      - "127.0.0.1:${DATA_REFINER_API_PORT:-7778}:7778"
+      - "127.0.0.1:${HDFS_UI_PORT:-9870}:9870"
+      - "127.0.0.1:${YARN_UI_PORT:-8088}:8088"
+      - "127.0.0.1:${SPARK_MASTER_UI_PORT:-8080}:8080"
+      - "127.0.0.1:${HIVE_SERVER_PORT:-10000}:10000"
+    volumes:
+      - namenode:/opt/hadoop/dfs/name
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:7778/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      sparknet:
+        ipv4_address: 172.28.1.2
+
+  worker1:
+    image: hadoop-hive-spark-worker
+    hostname: worker1
+    depends_on:
+      master:
+        condition: service_started
+    environment:
+      SPARK_MASTER_HOST: 172.28.1.2
+      SPARK_LOCAL_IP: 172.28.1.3
+      SPARK_LOCAL_HOSTNAME: worker1
+    volumes:
+      - datanode1:/opt/hadoop/dfs/data
+    restart: unless-stopped
+    networks:
+      sparknet:
+        ipv4_address: 172.28.1.3
+
+  worker2:
+    image: hadoop-hive-spark-worker
+    hostname: worker2
+    depends_on:
+      master:
+        condition: service_started
+    environment:
+      SPARK_MASTER_HOST: 172.28.1.2
+      SPARK_LOCAL_IP: 172.28.1.4
+      SPARK_LOCAL_HOSTNAME: worker2
+    volumes:
+      - datanode2:/opt/hadoop/dfs/data
+    restart: unless-stopped
+    networks:
+      sparknet:
+        ipv4_address: 172.28.1.4
+
+  history:
+    image: hadoop-hive-spark-history
+    hostname: history
+    depends_on:
+      master:
+        condition: service_started
+      worker1:
+        condition: service_started
+      worker2:
+        condition: service_started
+    environment:
+      SPARK_MASTER_HOST: 172.28.1.2
+      SPARK_LOCAL_IP: 172.28.1.5
+      SPARK_LOCAL_HOSTNAME: history
+    ports:
+      - "127.0.0.1:${SPARK_HISTORY_UI_PORT:-18080}:18080"
+    restart: unless-stopped
+    networks:
+      sparknet:
+        ipv4_address: 172.28.1.5
+
+  container-api:
+    build: services/docker-container-api
+    image: data-refiner-container-api:0.0.1
+    environment:
+      CONTAINER_API_KEY: ${DOCKER_CONTAINER_API_KEY}
+    ports:
+      - "127.0.0.1:${DOCKER_CONTAINER_API_PORT:-19999}:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - sparknet
+
+  spark-monitor:
+    build: services/spark-monitor
+    image: data-refiner-spark-monitor:0.0.1
+    environment:
+      YARN_RESOURCE_MANAGER_URL: http://master:8088
+      SPARK_HISTORY_URL: http://history:18080
+    ports:
+      - "127.0.0.1:${SPARK_MONITOR_PORT:-8010}:8010"
+    depends_on:
+      master:
+        condition: service_started
+      history:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - sparknet
+
+  workspace-image:
+    build: services/data-refiner-user-workspace
+    image: data-refiner-user-workspace:0.0.1
+    command: ["true"]
+    profiles: ["images"]
+
+  bootstrap:
+    image: data-refiner-hadoop-master:0.0.1
+    entrypoint: ["/opt/data-refiner-bootstrap/bootstrap.sh"]
+    environment:
+      SPARK_LOCAL_HOSTNAME: localhost
+      SPARK_LOCAL_IP: 127.0.0.1
+    depends_on:
+      master:
+        condition: service_healthy
+      worker1:
+        condition: service_started
+      worker2:
+        condition: service_started
+    profiles: ["bootstrap"]
+    networks:
+      - sparknet
+
+  agent:
+    build: .
+    image: data-refiner-agent:0.0.1
+    env_file:
+      - .env
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-}
+      DATA_REFINER_AGENT_MODEL: ${DATA_REFINER_AGENT_MODEL:-openai:gpt-5.6-luna}
+      DATABASE_URL: postgresql://data_refiner:${DATA_REFINER_DB_PASSWORD}@data-refiner-postgres:5432/data_refiner
+      DATA_REFINER_URL: http://master:7778
+      DOCKER_CONTAINER_API_URL: http://container-api:8000
+      DOCKER_CONTAINER_API_KEY: ${DOCKER_CONTAINER_API_KEY}
+      EMBEDDING_API_URL: http://embedding-api:18000
+      SPARK_MONITOR_URL: http://spark-monitor:8010
+      DATA_REFINER_DOCKER_NETWORK: ${DATA_REFINER_NETWORK:-data-refiner-agent-sparknet}
+      DATA_REFINER_WORKSPACE_IMAGE: data-refiner-user-workspace:0.0.1
+      DATA_REFINER_LOG_DIR: /app/logs
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      master:
+        condition: service_healthy
+      container-api:
+        condition: service_healthy
+      spark-monitor:
+        condition: service_healthy
+    networks:
+      - sparknet
+
+volumes:
+  namenode:
+  datanode1:
+  datanode2:
+  metastore:
+  data-refiner-postgres:
+
+networks:
+  sparknet:
+    name: ${DATA_REFINER_NETWORK:-data-refiner-agent-sparknet}
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

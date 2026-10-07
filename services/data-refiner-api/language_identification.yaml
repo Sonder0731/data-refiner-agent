@@ -1,0 +1,20 @@
+read_whole_text_file:
+  op_name: "whole_text_file_reader"
+  input_path: "./tests/pipeline/test_data/html"
+  output_df: "input_df"
+html_content_extract:
+  op_name: "html_content_extract_mapper"
+  input_df: "input_df"
+  output_df: "html_content_extraction.df"
+  field: "text"
+  output_field: "content"
+  show: true
+language_identifier:
+  op_name: "language_identification_mapper"
+  input_df: "html_content_extraction.df"
+  output_df: "language_identification.df"
+  field: "content"
+  output_field: "language"
+  select:
+    - "language"
+  show: true

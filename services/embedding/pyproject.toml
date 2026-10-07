@@ -1,0 +1,20 @@
+[project]
+name = "embedding"
+version = "0.0.1"
+description = "FastAPI service for IBM Granite multilingual text embeddings"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "sentence-transformers",
+    "torch",
+    "uvicorn",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

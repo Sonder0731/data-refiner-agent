@@ -1,0 +1,5 @@
+https://huggingface.co/buckets/sonder0731/data-refiner-agent-resources/resolve/000_00000.parquet?download=true	/data/cc/000_00000.parquet	2148507937	335d7bd9dac7f5fcd885a37b5ac1c096b4d20b27d521bc90e07d35e7eaa1aacd
+https://huggingface.co/buckets/sonder0731/data-refiner-agent-resources/resolve/chinese_news.csv?download=true	/data/chinese_news/chinese_news.csv	21914526	47d8bd91123efce9639d1fa95fe6aa334a16f2657ed581f1d4ad2d81406b4615
+https://huggingface.co/buckets/sonder0731/data-refiner-agent-resources/resolve/DMSC.csv?download=true	/data/douban_movies/DMSC.csv	405610647	62d47511061726f1243e83e7589ef637c7e5fc9301dd7321fa118111666bdaf6
+https://huggingface.co/buckets/sonder0731/data-refiner-agent-resources/resolve/btcusd_1-min_data.csv?download=true	/data/btc_ohlcv_dataset/btcusd_1-min_data.csv	389395687	fe857969f8c048752cb1b3c601a8d58aff8e5b276f7f78c95e2c419f60431f76
+https://huggingface.co/buckets/sonder0731/data-refiner-agent-resources/resolve/postings.csv?download=true	/data/job_postings/postings.csv	516843769	de33f27c8d1b226014e0cede003404e9b0acb66db718671fda9b3e3538eca6ea

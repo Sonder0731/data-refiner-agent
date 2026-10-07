@@ -1,0 +1,13 @@
+[project]
+name = "docker-container-api"
+version = "0.0.1"
+description = "Minimal authenticated API for creating Docker containers"
+requires-python = ">=3.12"
+dependencies = [
+    "docker",
+    "fastapi",
+    "uvicorn",
+]
+
+[tool.uv]
+package = false
